@@ -57,21 +57,19 @@ NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_public_token
 
 ## 🧭 설치 & 실행
 
-# 1. 레포지토리 클론
+```
 git clone https://github.com/aidenjangkkj/trip-app-v2.git
+
 cd trip-app-v2
 
-# 2. 의존성 설치
 npm install
 
-# 3. 개발 서버 실행
 npm run dev
-# http://localhost:3000 접속
 
-프로덕션 빌드
 npm run build
-npm start
 
+npm start
+```
 ---
 
 ## 📜 NPM 스크립트
