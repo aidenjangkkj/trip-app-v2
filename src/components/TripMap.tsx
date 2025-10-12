@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, GeoJSONSource, LngLatLike } from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
 import type { TripItem } from "@/types/trip";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
