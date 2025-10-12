@@ -124,6 +124,16 @@ https://trip-app-v2.vercel.app/
 
 ---
 
+---
+
+## ⚡ 성능
+
+[https://trip-app-v2.vercel.app/](https://pagespeed.web.dev/analysis/https-trip-app-v2-vercel-app/iwa5zk3jlf?form_factor=mobile)
+<img width="963" height="461" alt="캡처" src="https://github.com/user-attachments/assets/14ea2786-b950-474d-8b17-4a8d8ff5132d" />
+
+
+---
+
 ## 📄 라이선스
 
 이 프로젝트는 MIT 라이선스를 따릅니다.
