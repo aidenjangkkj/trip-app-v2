@@ -120,20 +120,6 @@ POST /api/items/alternatives	대안 3개 추천	{ dayIndex, item } → { candida
 
 ---
 
-## 🧠 개발 팁
-
-any 대신 unknown + Zod parse 패턴을 적극 활용하세요.
-
-Mapbox 좌표 순서는 항상 [lng, lat]입니다.
-
-Gemini 출력은 종종 깨질 수 있으므로 느슨한 파서 + 스키마 검증을 병행합니다.
-
-지오코딩은 비동기/속도 제한 고려가 필요합니다(Promise.all + 백오프 가능).
-
-Turbopack 환경에서 hot reload가 즉시 반영되므로 dev 모드 개발이 쾌적합니다.
-
----
-
 ## 🚀 배포
 
 https://trip-app-v2.vercel.app/
