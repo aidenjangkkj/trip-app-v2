@@ -1,6 +1,8 @@
+// trip-app-v2/src/app/page.tsx
+
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import DayBlock from "@/components/DayBlock";
 import { enrichPlanCoordinates } from "@/lib/enrichCoords";
@@ -113,17 +115,19 @@ export default function Page() {
     }
   };
 
-  const goNextStep = () => {
-    if (stepIndex < REQUIRED_STEPS.length - 1) setStepIndex((i) => i + 1);
-  };
-  const goPrevStep = () => {
-    if (stepIndex > 0) setStepIndex((i) => i - 1);
-  };
+  const goNextStep = useCallback(() => {
+    setStepIndex((i) => (i < REQUIRED_STEPS.length - 1 ? i + 1 : i));
+  }, []);
+
+  const goPrevStep = useCallback(() => {
+    setStepIndex((i) => (i > 0 ? i - 1 : i));
+  }, []);
 
   // 검증은 input 기준
   const isValid = useMemo(() => {
     if (currentStep.key === "regions") return input.regions.length > 0;
-    if (currentStep.key === "days") return Number.isFinite(input.days) && input.days >= 1;
+    if (currentStep.key === "days")
+      return Number.isFinite(input.days) && input.days >= 1;
     if (currentStep.key === "interests") return input.interests.length > 0;
     return false;
   }, [currentStep.key, input]);
@@ -158,8 +162,9 @@ export default function Page() {
       } catch (geoErr) {
         console.warn("좌표 보강 실패", geoErr);
       }
-    } catch (e: any) {
-      setError(e?.message || "알 수 없는 오류");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg || "알 수 없는 오류");
     } finally {
       setLoading(false);
     }
@@ -176,15 +181,13 @@ export default function Page() {
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [isValid, stepIndex]);
-
-  // 결과 네비
-  const totalDays = plan?.days?.length ?? 0;
-
+  }, [isValid, stepIndex, goNextStep]);
   return (
     <main className="min-h-screen bg-neutral-50">
       <section className="max-w-3xl mx-auto p-6">
-        <h1 className="text-3xl font-bold text-center mb-8">AI 여행 일정 추천</h1>
+        <h1 className="text-3xl font-bold text-center mb-8">
+          AI 여행 일정 추천
+        </h1>
 
         {/* 입력 단계 */}
         {!plan && !loading && (
@@ -312,11 +315,13 @@ export default function Page() {
                   ← 이전 일정
                 </button>
                 <div className="text-sm text-neutral-600">
-                  {dayCursor + 1} / {(plan?.days?.length ?? 0)}일차
+                  {dayCursor + 1} / {plan?.days?.length ?? 0}일차
                 </div>
                 <button
                   onClick={() =>
-                    setDayCursor((c) => Math.min((plan?.days?.length ?? 1) - 1, c + 1))
+                    setDayCursor((c) =>
+                      Math.min((plan?.days?.length ?? 1) - 1, c + 1)
+                    )
                   }
                   disabled={dayCursor >= (plan?.days?.length ?? 1) - 1}
                   className="px-3 py-2 rounded-xl border disabled:opacity-40"

@@ -1,10 +1,12 @@
+// trip-app-v2/src/components/DayBlock.tsx
+
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import TripMap from "@/components/TripMap";
 import type { TripPlan, TripItem, TravelMode } from "@/types/trip";
 
-import { DndContext, closestCenter, DragEndEvent } from "@dnd-kit/core";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
@@ -143,27 +145,27 @@ export default function DayBlock({
 
   const itemIds = useMemo(() => day.items.map((i) => i.id!), [day.items]);
 
-  const handleDragEnd = (e: DragEndEvent) => {
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIndex = day.items.findIndex((i) => i.id === active.id);
     const newIndex = day.items.findIndex((i) => i.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
     onChange(arrayMove(day.items, oldIndex, newIndex));
-  };
+  }, [day.items, onChange]);
 
-  const onLockToggle = (id: string) => {
+  const onLockToggle = useCallback((id: string) => {
     onChange(
       day.items.map((it) => (it.id === id ? { ...it, locked: !it.locked } : it))
     );
-  };
+  }, [day.items, onChange]);
 
-  const onPick = (id: string) => {
+  const onPick = useCallback((id: string) => {
     setSelectedId(id ?? null);
     onHighlight(id);
-  };
+  }, [onHighlight]);
 
-  const onRegenerate = async (id: string) => {
+  const onRegenerate = useCallback(async (id: string) => {
     const target = day.items.find((i) => i.id === id);
     if (!target) return;
     try {
@@ -172,45 +174,61 @@ export default function DayBlock({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ dayIndex, item: target }),
       });
-      const json = await res.json();
-      if (res.ok && json?.item) {
-        onChange(day.items.map((it) => (it.id === id ? { ...json.item, id } : it)));
+      const json: unknown = await res.json();
+      const ok = typeof json === "object" && json !== null && "item" in json;
+      if (res.ok && ok) {
+        const nextItem = (json as { item: TripItem }).item;
+        onChange(day.items.map((it) => (it.id === id ? { ...nextItem, id } : it)));
       } else {
-        alert(json?.error || "재추천 실패");
+        const errMsg = (json as { error?: string })?.error ?? "재추천 실패";
+        alert(errMsg);
       }
-    } catch (e: any) {
-      alert(e?.message || "재추천 실패");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(msg || "재추천 실패");
     }
-  };
+  }, [day.items, dayIndex, onChange]);
 
-  const onAlternatives = async (id: string) => {
+  const onAlternatives = useCallback(async (id: string) => {
+    const target = day.items.find((i) => i.id === id);
+    if (!target) return;
+
     try {
+      // 🛠 서버의 최신 시그니처와 일치: { dayIndex, item }
       const res = await fetch("/api/items/alternatives", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dayIndex, itemId: id }),
+        body: JSON.stringify({ dayIndex, item: target }),
       });
-      const json = await res.json();
-      if (res.ok && Array.isArray(json?.candidates)) {
-        // 심플 선택 다이얼로그(데모용)
-        const menu = json.candidates
-          .map((c: any, i: number) => `${i + 1}) ${c.place?.name ?? "-"}`)
+
+      const json: unknown = await res.json();
+      const candidates =
+        (Array.isArray((json as { candidates?: unknown })?.candidates)
+          ? (json as { candidates: TripItem[] }).candidates
+          : null);
+
+      if (res.ok && candidates) {
+        const menu = candidates
+          .map((c, i) => `${i + 1}) ${c?.place?.name ?? "-"}`)
           .join("\n");
         const pick = prompt(`${menu}\n\n번호를 입력하세요`);
         const idx = Number(pick) - 1;
-        if (!isNaN(idx) && json.candidates[idx]) {
+
+        if (!Number.isNaN(idx) && candidates[idx]) {
           const next = day.items.map((it) =>
-            it.id === id ? { ...json.candidates[idx], id, locked: false } : it
+            it.id === id ? { ...candidates[idx], id, locked: false } : it
           );
           onChange(next);
         }
       } else {
-        alert(json?.error || "대안 조회 실패");
+        const errMsg = (json as { error?: string })?.error ?? "대안 조회 실패";
+        alert(errMsg);
       }
-    } catch (e: any) {
-      alert(e?.message || "대안 조회 실패");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(msg || "대안 조회 실패");
     }
-  };
+  }, [day.items, dayIndex, onChange]);
 
   return (
     <div className="space-y-4">

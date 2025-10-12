@@ -1,8 +1,11 @@
+// trip-app-v2/src/components/TripMap.tsx
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import mapboxgl, { Map, GeoJSONSource, LngLatLike } from "mapbox-gl";
+import mapboxgl, { Map, GeoJSONSource, LngLatLike, MapLayerMouseEvent, MapMouseEvent, MapboxGeoJSONFeature } from "mapbox-gl";
 import type { TripItem } from "@/types/trip";
+import type { Feature, FeatureCollection, Point, LineString } from "geojson";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -14,11 +17,25 @@ type Props = {
   clustered?: boolean; // ✅ 클러스터 on/off (데모 땐 false 권장)
 };
 
+type PointProps = {
+  id: string;
+  name: string;
+  category:
+    | "food"
+    | "sight"
+    | "activity"
+    | "cafe"
+    | "shop"
+    | "transport"
+    | "hotel"
+    | "marker";
+};
+
 export default function TripMap({
   items,
   onSelect,
   selectedId,
-  mode = "walk",
+  mode: _mode = "walk", // ← 미사용 경고 억제(앞으로 사용 예정이면 _ 제거)
   clustered = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -26,44 +43,40 @@ export default function TripMap({
   const [ready, setReady] = useState(false);
 
   // 포인트(아이콘 매핑 위해 category 포함)
-  const points = useMemo(() => {
-    const features = items
-      .filter(
-        (it) =>
-          typeof it.place.lat === "number" && typeof it.place.lng === "number"
-      )
+  const points: FeatureCollection<Point, PointProps> = useMemo(() => {
+    const features: Feature<Point, PointProps>[] = items
+      .filter((it) => typeof it.place.lat === "number" && typeof it.place.lng === "number")
       .map((it) => ({
-        type: "Feature" as const,
+        type: "Feature",
         properties: {
           id: it.id ?? "",
           name: it.place.name,
-          category: it.place.category || "marker",
+          category: it.place.category ?? "marker",
         },
         geometry: {
-          type: "Point" as const,
-          coordinates: [it.place.lng!, it.place.lat!],
+          type: "Point",
+          coordinates: [it.place.lng as number, it.place.lat as number],
         },
       }));
-    return { type: "FeatureCollection" as const, features };
+    return { type: "FeatureCollection", features };
   }, [items]);
 
   // 동선 라인
-  const line = useMemo(() => {
+  const line: FeatureCollection<LineString> = useMemo(() => {
     const coords = items
-      .filter(
-        (it) =>
-          typeof it.place.lat === "number" && typeof it.place.lng === "number"
-      )
-      .map((it) => [it.place.lng!, it.place.lat!]);
-    if (coords.length < 2)
-      return { type: "FeatureCollection" as const, features: [] as any[] };
+      .filter((it) => typeof it.place.lat === "number" && typeof it.place.lng === "number")
+      .map<[number, number]>((it) => [it.place.lng as number, it.place.lat as number]);
+
+    if (coords.length < 2) {
+      return { type: "FeatureCollection", features: [] };
+    }
     return {
-      type: "FeatureCollection" as const,
+      type: "FeatureCollection",
       features: [
         {
-          type: "Feature" as const,
+          type: "Feature",
           properties: {},
-          geometry: { type: "LineString" as const, coordinates: coords },
+          geometry: { type: "LineString", coordinates: coords },
         },
       ],
     };
@@ -72,27 +85,29 @@ export default function TripMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // ✅ 컨테이너를 깨끗이 비우고 시작 (경고 방지)
+    // 컨테이너 초기화(중복 mount 방지)
     try {
-      containerRef.current.replaceChildren(); // 또는: containerRef.current.innerHTML = "";
+      containerRef.current.replaceChildren();
     } catch {}
+
+    const fallbackCenter: [number, number] = [139.767, 35.681]; // 도쿄역
+    const first = items.find((it) => typeof it.place.lng === "number" && typeof it.place.lat === "number");
+    const startCenter: [number, number] =
+      first ? [first.place.lng as number, first.place.lat as number] : fallbackCenter;
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: "mapbox://styles/mapbox/streets-v12",
-      center: [139.767, 35.681], // 초기(도쿄역)
+      center: startCenter,
       zoom: 11,
       cooperativeGestures: true,
     });
     mapRef.current = map;
 
-    map.addControl(
-      new mapboxgl.NavigationControl({ visualizePitch: true }),
-      "top-right"
-    );
+    map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "top-right");
 
     map.on("load", () => {
-      // ✅ 누락 아이콘 fallback (sprite 미존재 대비)
+      // 누락 아이콘 fallback (sprite 미존재 대비)
       map.on("styleimagemissing", (e) => {
         const id = e.id;
         if (!map.hasImage(id)) {
@@ -106,15 +121,14 @@ export default function TripMap({
         }
       });
 
-      // ✅ 이하 기존 소스/레이어/이벤트 등록 그대로...
+      // 포인트 소스
       map.addSource("plan-points", {
         type: "geojson",
         data: points,
-        ...(clustered
-          ? { cluster: true, clusterMaxZoom: 12, clusterRadius: 40 }
-          : {}),
+        ...(clustered ? { cluster: true, clusterMaxZoom: 12, clusterRadius: 40 } : {}),
       });
 
+      // 클러스터 레이어
       if (clustered) {
         map.addLayer({
           id: "clusters",
@@ -123,15 +137,7 @@ export default function TripMap({
           filter: ["has", "point_count"],
           paint: {
             "circle-color": "#2563eb",
-            "circle-radius": [
-              "step",
-              ["get", "point_count"],
-              15,
-              10,
-              20,
-              25,
-              30,
-            ],
+            "circle-radius": ["step", ["get", "point_count"], 15, 10, 20, 25, 30],
             "circle-opacity": 0.7,
           },
         });
@@ -148,24 +154,21 @@ export default function TripMap({
         });
       }
 
+      // 개별 포인트(circle)
       map.addLayer({
         id: "unclustered-circle",
         type: "circle",
         source: "plan-points",
         ...(clustered ? { filter: ["!", ["has", "point_count"]] } : {}),
         paint: {
-          "circle-color": [
-            "case",
-            ["==", ["get", "id"], selectedId ?? ""],
-            "#ef4444",
-            "#10b981",
-          ],
+          "circle-color": ["case", ["==", ["get", "id"], selectedId ?? ""], "#ef4444", "#10b981"],
           "circle-radius": 6,
           "circle-stroke-width": 1.2,
           "circle-stroke-color": "#fff",
         },
       });
 
+      // 개별 포인트(symbol)
       map.addLayer({
         id: "unclustered-symbol",
         type: "symbol",
@@ -175,20 +178,13 @@ export default function TripMap({
           "icon-image": [
             "match",
             ["get", "category"],
-            "food",
-            "restaurant-15",
-            "cafe",
-            "cafe-15",
-            "shop",
-            "shop-15",
-            "sight",
-            "monument-15",
-            "activity",
-            "attraction-15",
-            "transport",
-            "bus-15",
-            "hotel",
-            "lodging-15",
+            "food", "restaurant-15",
+            "cafe", "cafe-15",
+            "shop", "shop-15",
+            "sight", "monument-15",
+            "activity", "attraction-15",
+            "transport", "bus-15",
+            "hotel", "lodging-15",
             /* default */ "marker-15",
           ],
           "icon-size": 1.2,
@@ -203,6 +199,7 @@ export default function TripMap({
         paint: { "text-color": "#111827" },
       });
 
+      // 라인
       map.addSource("route-line", { type: "geojson", data: line });
       map.addLayer(
         {
@@ -210,23 +207,19 @@ export default function TripMap({
           type: "line",
           source: "route-line",
           layout: { "line-join": "round", "line-cap": "round" },
-          paint: {
-            "line-color": "#111827",
-            "line-width": 3,
-            "line-opacity": 0.8,
-          },
+          paint: { "line-color": "#111827", "line-width": 3, "line-opacity": 0.8 },
         },
         "unclustered-symbol"
       );
 
       if (clustered) {
-        map.on("click", "clusters", (e) => {
-          const features = map.queryRenderedFeatures(e.point, {
-            layers: ["clusters"],
-          });
-          const center = (features[0].geometry as any)
-            .coordinates as LngLatLike;
-          const clusterId = features[0].properties?.cluster_id;
+        map.on("click", "clusters", (e: MapLayerMouseEvent) => {
+          const features = map.queryRenderedFeatures(e.point, { layers: ["clusters"] });
+          const f = features[0] as MapboxGeoJSONFeature | undefined;
+          if (!f) return;
+          const center = (f.geometry as Point).coordinates as LngLatLike;
+          const clusterId = (f.properties as { cluster_id?: number } | undefined)?.cluster_id;
+          if (typeof clusterId !== "number") return;
           const src = map.getSource("plan-points") as GeoJSONSource;
           src.getClusterExpansionZoom(clusterId, (err, z) => {
             if (err) return;
@@ -236,9 +229,8 @@ export default function TripMap({
         });
       }
 
-      const selectFromEvent = (e: any) => {
-        const f = e.features?.[0];
-        const id = f?.properties && (f.properties as any).id;
+      const selectFromEvent = (e: MapLayerMouseEvent) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
         if (id && onSelect) onSelect(id);
       };
       map.on("click", "unclustered-symbol", selectFromEvent);
@@ -251,16 +243,8 @@ export default function TripMap({
       ];
       hoverLayers.forEach((layerId) => {
         if (!map.getLayer(layerId)) return;
-        map.on(
-          "mouseenter",
-          layerId,
-          () => (map.getCanvas().style.cursor = "pointer")
-        );
-        map.on(
-          "mouseleave",
-          layerId,
-          () => (map.getCanvas().style.cursor = "")
-        );
+        map.on("mouseenter", layerId, () => (map.getCanvas().style.cursor = "pointer"));
+        map.on("mouseleave", layerId, () => (map.getCanvas().style.cursor = ""));
       });
 
       setReady(true);
@@ -270,8 +254,7 @@ export default function TripMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [clustered]);
-  // clustered 변경 시 재생성
+  }, [clustered, items, onSelect, selectedId]);
 
   // 데이터/선택 변경 시 업데이트 + bounds/zoom 보정
   useEffect(() => {
@@ -279,10 +262,10 @@ export default function TripMap({
     const map = mapRef.current;
 
     const src = map.getSource("plan-points") as GeoJSONSource | undefined;
-    if (src) src.setData(points as any);
+    if (src) src.setData(points);
 
     const lineSrc = map.getSource("route-line") as GeoJSONSource | undefined;
-    if (lineSrc) lineSrc.setData(line as any);
+    if (lineSrc) lineSrc.setData(line);
 
     // 선택 하이라이트 컬러 반영
     if (map.getLayer("unclustered-circle")) {
@@ -295,22 +278,22 @@ export default function TripMap({
     }
 
     // bounds fit
-    const coords = (points.features as any[]).map(
-      (f) => f.geometry.coordinates
-    );
+    const coords = points.features.map((f) => f.geometry.coordinates);
     if (coords.length) {
       const b = new mapboxgl.LngLatBounds();
       coords.forEach((c) => b.extend(c as [number, number]));
       map.fitBounds(b, {
         padding: 60,
-        maxZoom: clustered ? 15 : 16, // 데모에서 아이콘 바로 보이게
+        maxZoom: clustered ? 15 : 16,
         duration: 400,
       });
       const z = map.getZoom();
       const minZoom = clustered ? 14.5 : 16;
       if (z < minZoom) map.easeTo({ zoom: minZoom, duration: 200 });
     }
-  }, [points, line, ready, clustered]);
+  }, [points, line, ready, clustered, selectedId]);
+
+  // 선택된 마커로 부드럽게 이동
   useEffect(() => {
     if (!ready || !mapRef.current || !selectedId) return;
     const map = mapRef.current;
@@ -318,9 +301,9 @@ export default function TripMap({
     const lng = it?.place.lng;
     const lat = it?.place.lat;
     if (typeof lng === "number" && typeof lat === "number") {
-      const targetZoom = Math.max(map.getZoom(), clustered ? 16 : 15); // 클러스터면 더 확대
+      const targetZoom = Math.max(map.getZoom(), clustered ? 16 : 15);
       map.easeTo({
-        center: [lng, lat], // ✅ [lng, lat] 순서
+        center: [lng, lat],
         zoom: targetZoom,
         duration: 600,
         essential: true,
