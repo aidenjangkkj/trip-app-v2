@@ -136,13 +136,7 @@ Turbopack 환경에서 hot reload가 즉시 반영되므로 dev 모드 개발이
 
 ## 🚀 배포
 
-Vercel 권장
-
-프로젝트 연결 후, 환경 변수는 Project Settings → Environment Variables에 설정
-
-프리뷰 / 프로덕션 환경 분리 가능
-
-그 외 호스팅에서도 Next.js 표준 빌드/런 명령을 그대로 사용할 수 있습니다.
+https://trip-app-v2.vercel.app/
 
 ---
 
