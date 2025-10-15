@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import DayBlock from "@/components/DayBlock";
 import { enrichPlanCoordinates } from "@/lib/enrichCoords";
@@ -10,11 +10,11 @@ import type { TripInput, TripPlan, TripItem } from "@/types/trip";
 import { ensureItemIds } from "@/lib/ensureItemIds";
 
 // 스피너
-function Spinner() {
+function Spinner({ message = "일정을 생성하고 있어요…" }: { message?: string }) {
   return (
     <div className="flex items-center justify-center gap-3">
       <div className="size-6 animate-spin rounded-full border-2 border-neutral-300 border-t-black" />
-      <span className="text-sm text-neutral-600">일정을 생성하고 있어요…</span>
+      <span className="text-sm text-neutral-600">{message}</span>
     </div>
   );
 }
@@ -83,7 +83,9 @@ export default function Page() {
   const [stepIndex, setStepIndex] = useState(0);
 
   // 결과/로딩/에러
-  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
+  const requestIdRef = useRef(0);
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -134,7 +136,11 @@ export default function Page() {
 
   // 일정 생성
   const startGenerate = async () => {
-    setLoading(true);
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    setGenerating(true);
+    setEnhancing(false);
     setError(null);
     setPlan(null);
     setDayCursor(0);
@@ -148,25 +154,35 @@ export default function Page() {
       if (!res.ok) throw new Error(data.error || "생성 실패");
 
       const raw = ensureItemIds(data);
+      if (requestIdRef.current !== requestId) return;
       setPlan(raw);
+      setGenerating(false);
 
-      // 좌표 보강
-      try {
-        const regionHint = input.regions?.join(" ");
-        const enriched = await enrichPlanCoordinates(
-          raw,
-          regionHint,
-          input.language ?? "ko"
-        );
-        setPlan(enriched);
-      } catch (geoErr) {
-        console.warn("좌표 보강 실패", geoErr);
-      }
+      const regionHint = input.regions?.join(" ");
+      const language = input.language ?? "ko";
+
+      void (async () => {
+        if (requestIdRef.current !== requestId) return;
+        setEnhancing(true);
+        try {
+          const enriched = await enrichPlanCoordinates(raw, regionHint, language);
+          if (requestIdRef.current !== requestId) return;
+          setPlan(enriched);
+        } catch (geoErr) {
+          if (requestIdRef.current === requestId) {
+            console.warn("좌표 보강 실패", geoErr);
+          }
+        } finally {
+          if (requestIdRef.current === requestId) {
+            setEnhancing(false);
+          }
+        }
+      })();
     } catch (e: unknown) {
+      if (requestIdRef.current !== requestId) return;
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg || "알 수 없는 오류");
-    } finally {
-      setLoading(false);
+      setGenerating(false);
     }
   };
 
@@ -190,7 +206,7 @@ export default function Page() {
         </h1>
 
         {/* 입력 단계 */}
-        {!plan && !loading && (
+        {!plan && !generating && (
           <div className="h-[70vh] flex flex-col items-center justify-center text-center">
             <AnimatePresence mode="wait">
               <motion.div
@@ -280,20 +296,26 @@ export default function Page() {
         )}
 
         {/* 로딩 */}
-        {loading && (
+        {generating && (
           <div className="h-[380px] flex items-center justify-center">
             <Spinner />
           </div>
         )}
 
         {/* 에러 */}
-        {error && !loading && !plan && (
+        {error && !generating && !plan && (
           <p className="text-red-600 text-center mt-6">{error}</p>
         )}
 
         {/* 결과 (하루씩 네비게이션) */}
-        {plan && !loading && (
+        {plan && !generating && (
           <div className="mt-6">
+            {enhancing && (
+              <div className="flex items-center justify-center md:justify-start gap-2 text-sm text-neutral-500 mb-4">
+                <div className="size-3 animate-spin rounded-full border border-neutral-300 border-t-black" />
+                <span>장소 좌표를 정리하는 중이에요…</span>
+              </div>
+            )}
             <div className="bg-white rounded-2xl shadow p-4 border">
               <h2 className="text-xl font-semibold">{plan.title}</h2>
               {plan.summary?.length ? (
