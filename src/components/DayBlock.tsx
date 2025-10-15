@@ -14,7 +14,6 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
 // ✅ API 호출 유틸
 import { fetchAlternatives, fetchRegenerateItem } from "@/lib/api-client";
 
@@ -96,7 +95,7 @@ function SortableItem({
     transition,
     border: selected ? "2px solid #2563eb" : undefined,
     opacity: busy ? 0.6 : 1,
-    pointerEvents: busy ? ("none" as any) : "auto",
+    pointerEvents: (busy ? "none" : "auto") as React.CSSProperties["pointerEvents"],
   };
 
   return (
