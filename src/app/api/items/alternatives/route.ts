@@ -72,7 +72,6 @@ export async function POST(req: NextRequest) {
   try {
     const raw: unknown = await req.json();
     const { dayIndex, itemId }: AlternativesBody = BodySchema.parse(raw);
-
     // dayIndex/itemId를 프롬프트에 포함(미사용 경고 방지 + 약간의 컨텍스트)
     const prompt = `
 Return EXACTLY THREE alternative itinerary items as a pure JSON array. No commentary.

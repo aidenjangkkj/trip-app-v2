@@ -45,7 +45,6 @@ function tryParseJsonObject(raw: string) {
   }
   return { ok: false as const, err: "INVALID_JSON" as const };
 }
-
 export async function POST(req: NextRequest) {
   try {
     const raw: unknown = await req.json();

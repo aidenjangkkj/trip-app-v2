@@ -48,3 +48,5 @@ export async function fetchRegenerateItem(
   }
   return (data as any).item as TripItem;
 }
+
+// src/app/api/regenerate-item/route.ts

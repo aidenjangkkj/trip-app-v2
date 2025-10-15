@@ -220,7 +220,6 @@ export default function DayBlock({
   }, [day.items]);
 
   const itemIds = useMemo(() => day.items.map((i) => i.id!), [day.items]);
-
   const handleDragEnd = useCallback(
     (e: DragEndEvent) => {
       const { active, over } = e;
