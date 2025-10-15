@@ -10,12 +10,7 @@ import type { TripInput, TripPlan, TripItem } from "@/types/trip";
 import { ensureItemIds } from "@/lib/ensureItemIds";
 
 // 스피너
-// ✅ 교체: 기존 Spinner 컴포넌트를 아래 버전으로 바꿔주세요.
-function Spinner({
-  message = "일정을 생성하고 있어요…",
-}: {
-  message?: string;
-}) {
+function Spinner({ message = "일정을 생성하고 있어요…" }: { message?: string }) {
   const tips = useRef<string[]>([
     "도시별 인기 스팟을 수집 중…",
     "이동 동선을 최소화하고 있어요",
@@ -32,14 +27,9 @@ function Spinner({
   }, []);
 
   return (
-    <div
-      className="flex flex-col items-center justify-center gap-2"
-      aria-live="polite"
-    >
+    <div className="flex flex-col items-center justify-center gap-2" aria-live="polite">
       <div className="size-6 animate-spin rounded-full border-2 border-neutral-300 border-t-black" />
-      {/* ▶︎ 메인 메시지: 스피너 '아래'에 배치 */}
       <div className="text-sm text-neutral-700">{message}</div>
-      {/* ▶︎ 보조 멘트(회전 Tip) */}
       <div className="text-xs text-neutral-500">{tips[tipIdx]}</div>
     </div>
   );
@@ -60,28 +50,13 @@ const REQUIRED_STEPS: {
   placeholder: string;
   type: "text" | "number";
 }[] = [
-  {
-    key: "regions",
-    label: "어디로 가시나요?",
-    placeholder: "예: 일본 도쿄 (여러 곳도 가능)",
-    type: "text",
-  },
-  {
-    key: "days",
-    label: "여행은 며칠인가요?",
-    placeholder: "예: 3",
-    type: "number",
-  },
-  {
-    key: "interests",
-    label: "주요 관심사는 무엇인가요?",
-    placeholder: "예: 미식, 포토스팟",
-    type: "text",
-  },
+  { key: "regions", label: "어디로 가시나요?", placeholder: "예: 일본 도쿄 (여러 곳도 가능)", type: "text" },
+  { key: "days", label: "여행은 며칠인가요?", placeholder: "예: 3", type: "number" },
+  { key: "interests", label: "주요 관심사는 무엇인가요?", placeholder: "예: 미식, 포토스팟", type: "text" },
 ];
 
 export default function Page() {
-  // --- 입력 상태 (URL 동기화 제거: 전부 로컬 state) ---
+  // 입력 상태
   const [input, setInput] = useState<TripInput>({
     regions: [],
     days: 3,
@@ -91,18 +66,15 @@ export default function Page() {
     travelers: 2,
     language: "ko",
   });
-  
-  const [draft, setDraft] = useState<{
-    regions: string;
-    days: string;
-    interests: string;
-  }>({
+
+  // draft 입력 상태(사용자 타이핑 그대로 보존)
+  const [draft, setDraft] = useState<{ regions: string; days: string; interests: string }>({
     regions: "",
     days: "",
     interests: "",
   });
 
-  // (선택) 최근 입력 로컬 저장/복원
+  // 로컬 저장/복원
   useEffect(() => {
     try {
       const raw = localStorage.getItem("trip.input.v1");
@@ -115,7 +87,7 @@ export default function Page() {
     } catch {}
   }, [input]);
 
-  // 스텝/애니메이션
+  // 스텝
   const [stepIndex, setStepIndex] = useState(0);
 
   // 결과/로딩/에러
@@ -125,19 +97,20 @@ export default function Page() {
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 결과 페이징: 하루씩 보기
+  // 하루 보기 페이징
   const [dayCursor, setDayCursor] = useState(0);
 
-  // 현재 스텝
   const currentStep = REQUIRED_STEPS[stepIndex];
 
-  // 입력값을 문자열로 표시
+  // 현재 표시 값(draft 기준)
   const currentValue = useMemo(() => {
     if (currentStep.key === "regions") return draft.regions;
     if (currentStep.key === "days") return draft.days;
     if (currentStep.key === "interests") return draft.interests;
     return "";
   }, [currentStep, draft]);
+
+  // 스텝 변경 시 draft 초기화
   useEffect(() => {
     if (currentStep.key === "regions") {
       setDraft((d) => ({ ...d, regions: input.regions.join(", ") }));
@@ -147,27 +120,24 @@ export default function Page() {
       setDraft((d) => ({ ...d, interests: input.interests.join(", ") }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepIndex]); // 스텝이 바뀔 때만 초기화
-  // 현재 스텝 입력 업데이트
+  }, [stepIndex]);
+
+  // 입력 업데이트(draft만 갱신)
   const updateCurrent = (raw: string) => {
-    if (currentStep.key === "regions") {
-      setDraft((d) => ({ ...d, regions: raw }));
-    } else if (currentStep.key === "days") {
-      setDraft((d) => ({ ...d, days: raw }));
-    } else if (currentStep.key === "interests") {
-      setDraft((d) => ({ ...d, interests: raw }));
-    }
+    if (currentStep.key === "regions") setDraft((d) => ({ ...d, regions: raw }));
+    else if (currentStep.key === "days") setDraft((d) => ({ ...d, days: raw }));
+    else if (currentStep.key === "interests") setDraft((d) => ({ ...d, interests: raw }));
   };
+
+  // draft -> input 커밋
   const commitDraftFor = (key: StepKey) => {
     setInput((prev) => {
-      if (key === "regions")
-        return { ...prev, regions: parseCSV(draft.regions) };
+      if (key === "regions") return { ...prev, regions: parseCSV(draft.regions) };
       if (key === "days") {
         const n = Math.max(1, Number(draft.days || 1));
         return { ...prev, days: Number.isFinite(n) ? n : 1 };
       }
-      if (key === "interests")
-        return { ...prev, interests: parseCSV(draft.interests) };
+      if (key === "interests") return { ...prev, interests: parseCSV(draft.interests) };
       return prev;
     });
   };
@@ -179,29 +149,24 @@ export default function Page() {
   }, [currentStep.key]);
 
   const goPrevStep = useCallback(() => {
-    // 이전 스텝 이동 시엔 커밋은 선택 사항이지만, 일관성 위해 유지해도 OK
     commitDraftFor(currentStep.key);
     setStepIndex((i) => (i > 0 ? i - 1 : i));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep.key]);
 
-  // 검증은 input 기준
+  // 유효성(draft 기준)
   const isValid = useMemo(() => {
-    if (currentStep.key === "regions")
-      return parseCSV(draft.regions).length > 0;
+    if (currentStep.key === "regions") return parseCSV(draft.regions).length > 0;
     if (currentStep.key === "days") {
       const n = Number(draft.days);
       return Number.isFinite(n) && n >= 1;
     }
-    if (currentStep.key === "interests")
-      return parseCSV(draft.interests).length > 0;
+    if (currentStep.key === "interests") return parseCSV(draft.interests).length > 0;
     return false;
   }, [currentStep.key, draft]);
 
   // 일정 생성
-  // ✅ startGenerate: draft를 최종 커밋해 사용하도록 수정한 전체 블럭
   const startGenerate = async () => {
-    // 1) draft → input 최종 커밋
     const finalInput: TripInput = {
       ...input,
       regions: parseCSV(draft.regions),
@@ -210,11 +175,9 @@ export default function Page() {
     };
     setInput(finalInput);
 
-    // 2) 요청 아이디 관리 (경쟁 상태 방지)
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
 
-    // 3) 로딩 상태 세팅
     setGenerating(true);
     setEnhancing(false);
     setError(null);
@@ -222,7 +185,6 @@ export default function Page() {
     setDayCursor(0);
 
     try {
-      // 4) 일정 생성 API 호출
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -231,16 +193,12 @@ export default function Page() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "생성 실패");
 
-      // 5) 아이템 ID 보장
       const rawPlan = ensureItemIds(data);
-
-      // 최신 요청만 반영
       if (requestIdRef.current !== requestId) return;
 
       setPlan(rawPlan);
       setGenerating(false);
 
-      // 6) 좌표 보강 (비동기)
       const regionHint = finalInput.regions?.join(" ");
       const language = finalInput.language ?? "ko";
 
@@ -248,11 +206,7 @@ export default function Page() {
         if (requestIdRef.current !== requestId) return;
         setEnhancing(true);
         try {
-          const enriched = await enrichPlanCoordinates(
-            rawPlan,
-            regionHint,
-            language
-          );
+          const enriched = await enrichPlanCoordinates(rawPlan, regionHint, language);
           if (requestIdRef.current !== requestId) return;
           setPlan(enriched);
         } catch (geoErr) {
@@ -285,12 +239,11 @@ export default function Page() {
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [isValid, stepIndex, goNextStep]);
+
   return (
     <main className="min-h-screen bg-neutral-50">
       <section className="max-w-3xl mx-auto p-6">
-        <h1 className="text-3xl font-bold text-center mb-8">
-          AI 여행 일정 추천
-        </h1>
+        <h1 className="text-3xl font-bold text-center mb-8">AI 여행 일정 추천</h1>
 
         {/* 입력 단계 */}
         {!plan && !generating && (
@@ -308,11 +261,8 @@ export default function Page() {
                   {stepIndex + 1} / {REQUIRED_STEPS.length}
                 </div>
 
-                <div className="text-2xl md:text-3xl font-semibold mb-6">
-                  {currentStep.label}
-                </div>
+                <div className="text-2xl md:text-3xl font-semibold mb-6">{currentStep.label}</div>
 
-                {/* 큰 입력창 */}
                 {currentStep.type === "text" && (
                   <input
                     className="w-full text-center text-2xl md:text-3xl bg-transparent outline-none focus:outline-none focus:ring-0 placeholder:text-neutral-400 py-3"
@@ -370,9 +320,7 @@ export default function Page() {
                     <button
                       key={s.key}
                       onClick={() => setStepIndex(i)}
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        i === stepIndex ? "bg-black" : "bg-neutral-300"
-                      }`}
+                      className={`h-2.5 w-2.5 rounded-full ${i === stepIndex ? "bg-black" : "bg-neutral-300"}`}
                       aria-label={`step-${i + 1}`}
                     />
                   ))}
@@ -427,11 +375,7 @@ export default function Page() {
                   {dayCursor + 1} / {plan?.days?.length ?? 0}일차
                 </div>
                 <button
-                  onClick={() =>
-                    setDayCursor((c) =>
-                      Math.min((plan?.days?.length ?? 1) - 1, c + 1)
-                    )
-                  }
+                  onClick={() => setDayCursor((c) => Math.min((plan?.days?.length ?? 1) - 1, c + 1))}
                   disabled={dayCursor >= (plan?.days?.length ?? 1) - 1}
                   className="px-3 py-2 rounded-xl border disabled:opacity-40"
                 >
@@ -455,7 +399,7 @@ export default function Page() {
                       copy.days[dayCursor].items = nextItems;
                       setPlan(copy);
                     }}
-                    onHighlight={() => {}}
+                    onHighlight={()=>{}}
                   />
                 </motion.div>
               </AnimatePresence>
@@ -465,9 +409,7 @@ export default function Page() {
                   <button
                     key={i}
                     onClick={() => setDayCursor(i)}
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      i === dayCursor ? "bg-black" : "bg-neutral-300"
-                    }`}
+                    className={`h-2.5 w-2.5 rounded-full ${i === dayCursor ? "bg-black" : "bg-neutral-300"}`}
                   />
                 ))}
               </div>
