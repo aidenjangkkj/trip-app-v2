@@ -80,7 +80,7 @@ Each item shape:
 {
   "time"?: string,
   "place": {
-    "name": string,
+    "name": string(Korean),
     "category": "food"|"sight"|"activity"|"cafe"|"shop"|"transport"|"hotel",
     "address"?: string,
     "lat"?: number,
@@ -91,7 +91,7 @@ Each item shape:
     "notes"?: string[],
     "imageUrl"?: string
   },
-  "tips"?: string
+  "tips"?: string(Korean)
 }
 
 Context (hint only): dayIndex=${dayIndex}, replacing itemId="${itemId}".
@@ -128,11 +128,13 @@ Context (hint only): dayIndex=${dayIndex}, replacing itemId="${itemId}".
       );
     }
 
-    // 런타임 검증(정확히 3개)
     const validated = AltArraySchema.safeParse(loose.data);
     if (!validated.success) {
       return new Response(
-        JSON.stringify({ error: "INVALID_ALT_ITEMS", issues: validated.error.flatten() }),
+        JSON.stringify({
+          error: "INVALID_ALT_ITEMS",
+          issues: validated.error.flatten(),
+        }),
         { status: 422, headers: { "content-type": "application/json" } }
       );
     }
@@ -144,9 +146,12 @@ Context (hint only): dayIndex=${dayIndex}, replacing itemId="${itemId}".
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
-    return new Response(JSON.stringify({ error: "alts-failed", detail: message }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "alts-failed", detail: message }),
+      {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }
+    );
   }
 }

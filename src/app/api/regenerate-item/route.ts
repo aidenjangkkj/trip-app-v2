@@ -1,4 +1,4 @@
-// src/app/api/items/alternatives/route.ts
+// src/app/api/items/regenerate-item/route.ts
 import { NextRequest } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
@@ -64,7 +64,7 @@ Constraints:
     "time"?: string,
     "locked"?: boolean,
     "place": {
-      "name": string,
+      "name": string(Korean),
       "category": "food"|"sight"|"activity"|"cafe"|"shop"|"transport"|"hotel",
       "address"?: string,
       "lat"?: number,
@@ -75,7 +75,7 @@ Constraints:
       "notes"?: string[],
       "imageUrl"?: string
     },
-    "tips"?: string
+    "tips"?: string(Korean)
   }
 Context (hint): dayIndex=${dayIndex}, replacing "${item.place.name}".
 No commentary. Return only the JSON object.
@@ -89,34 +89,51 @@ No commentary. Return only the JSON object.
 
     const text = extractTextStrict(result);
     if (!text) {
-      return new Response(JSON.stringify({ error: "EMPTY_OR_UNREADABLE_RESPONSE" }), {
-        status: 502, headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "EMPTY_OR_UNREADABLE_RESPONSE" }),
+        {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        }
+      );
     }
 
     const loose = tryParseJsonObject(text);
     if (!loose.ok) {
-      return new Response(JSON.stringify({ error: "INVALID_MODEL_JSON", detail: loose.err, sample: text.slice(0, 300) }), {
-        status: 502, headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "INVALID_MODEL_JSON",
+          detail: loose.err,
+          sample: text.slice(0, 300),
+        }),
+        { status: 502, headers: { "content-type": "application/json" } }
+      );
     }
 
-    // 모델 결과를 TripItem으로 검증(런타임 보장)
     const validated = TripItemSchema.safeParse(loose.data);
     if (!validated.success) {
-      return new Response(JSON.stringify({ error: "INVALID_ITEM_SHAPE", issues: validated.error.flatten() }), {
-        status: 422, headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "INVALID_ITEM_SHAPE",
+          issues: validated.error.flatten(),
+        }),
+        { status: 422, headers: { "content-type": "application/json" } }
+      );
     }
 
     const alt: TripItem = validated.data;
     return new Response(JSON.stringify({ item: alt }), {
-      status: 200, headers: { "content-type": "application/json" },
+      status: 200,
+      headers: { "content-type": "application/json" },
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
-    return new Response(JSON.stringify({ error: "regen-failed", detail: message }), {
-      status: 500, headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "regen-failed", detail: message }),
+      {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }
+    );
   }
 }

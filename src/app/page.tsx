@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import DayBlock from "@/components/DayBlock";
 import { enrichPlanCoordinates } from "@/lib/enrichCoords";
@@ -10,11 +10,37 @@ import type { TripInput, TripPlan, TripItem } from "@/types/trip";
 import { ensureItemIds } from "@/lib/ensureItemIds";
 
 // 스피너
-function Spinner() {
+// ✅ 교체: 기존 Spinner 컴포넌트를 아래 버전으로 바꿔주세요.
+function Spinner({
+  message = "일정을 생성하고 있어요…",
+}: {
+  message?: string;
+}) {
+  const tips = useRef<string[]>([
+    "도시별 인기 스팟을 수집 중…",
+    "이동 동선을 최소화하고 있어요",
+    "AI가 맛집/카페 리뷰를 요약 중…",
+    "지도 좌표를 정밀 보정 중…",
+    "비 오는 날 대안 코스를 고려해요",
+  ]).current;
+
+  const [tipIdx, setTipIdx] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTipIdx((i) => (i + 1) % tips.length), 2500);
+    return () => clearInterval(id);
+  }, []);
+
   return (
-    <div className="flex items-center justify-center gap-3">
+    <div
+      className="flex flex-col items-center justify-center gap-2"
+      aria-live="polite"
+    >
       <div className="size-6 animate-spin rounded-full border-2 border-neutral-300 border-t-black" />
-      <span className="text-sm text-neutral-600">일정을 생성하고 있어요…</span>
+      {/* ▶︎ 메인 메시지: 스피너 '아래'에 배치 */}
+      <div className="text-sm text-neutral-700">{message}</div>
+      {/* ▶︎ 보조 멘트(회전 Tip) */}
+      <div className="text-xs text-neutral-500">{tips[tipIdx]}</div>
     </div>
   );
 }
@@ -65,6 +91,16 @@ export default function Page() {
     travelers: 2,
     language: "ko",
   });
+  
+  const [draft, setDraft] = useState<{
+    regions: string;
+    days: string;
+    interests: string;
+  }>({
+    regions: "",
+    days: "",
+    interests: "",
+  });
 
   // (선택) 최근 입력 로컬 저장/복원
   useEffect(() => {
@@ -83,7 +119,9 @@ export default function Page() {
   const [stepIndex, setStepIndex] = useState(0);
 
   // 결과/로딩/에러
-  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
+  const requestIdRef = useRef(0);
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,78 +133,143 @@ export default function Page() {
 
   // 입력값을 문자열로 표시
   const currentValue = useMemo(() => {
-    if (currentStep.key === "regions") return input.regions.join(", ");
-    if (currentStep.key === "days") return String(input.days || "");
-    if (currentStep.key === "interests") return input.interests.join(", ");
+    if (currentStep.key === "regions") return draft.regions;
+    if (currentStep.key === "days") return draft.days;
+    if (currentStep.key === "interests") return draft.interests;
     return "";
-  }, [currentStep, input]);
-
+  }, [currentStep, draft]);
+  useEffect(() => {
+    if (currentStep.key === "regions") {
+      setDraft((d) => ({ ...d, regions: input.regions.join(", ") }));
+    } else if (currentStep.key === "days") {
+      setDraft((d) => ({ ...d, days: String(input.days ?? "") }));
+    } else if (currentStep.key === "interests") {
+      setDraft((d) => ({ ...d, interests: input.interests.join(", ") }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIndex]); // 스텝이 바뀔 때만 초기화
   // 현재 스텝 입력 업데이트
   const updateCurrent = (raw: string) => {
     if (currentStep.key === "regions") {
-      const arr = parseCSV(raw);
-      setInput((prev) => ({ ...prev, regions: arr }));
+      setDraft((d) => ({ ...d, regions: raw }));
     } else if (currentStep.key === "days") {
-      const n = Math.max(1, Number(raw || 1));
-      setInput((prev) => ({ ...prev, days: Number.isFinite(n) ? n : 1 }));
+      setDraft((d) => ({ ...d, days: raw }));
     } else if (currentStep.key === "interests") {
-      const arr = parseCSV(raw);
-      setInput((prev) => ({ ...prev, interests: arr }));
+      setDraft((d) => ({ ...d, interests: raw }));
     }
+  };
+  const commitDraftFor = (key: StepKey) => {
+    setInput((prev) => {
+      if (key === "regions")
+        return { ...prev, regions: parseCSV(draft.regions) };
+      if (key === "days") {
+        const n = Math.max(1, Number(draft.days || 1));
+        return { ...prev, days: Number.isFinite(n) ? n : 1 };
+      }
+      if (key === "interests")
+        return { ...prev, interests: parseCSV(draft.interests) };
+      return prev;
+    });
   };
 
   const goNextStep = useCallback(() => {
+    commitDraftFor(currentStep.key);
     setStepIndex((i) => (i < REQUIRED_STEPS.length - 1 ? i + 1 : i));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep.key]);
 
   const goPrevStep = useCallback(() => {
+    // 이전 스텝 이동 시엔 커밋은 선택 사항이지만, 일관성 위해 유지해도 OK
+    commitDraftFor(currentStep.key);
     setStepIndex((i) => (i > 0 ? i - 1 : i));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep.key]);
 
   // 검증은 input 기준
   const isValid = useMemo(() => {
-    if (currentStep.key === "regions") return input.regions.length > 0;
-    if (currentStep.key === "days")
-      return Number.isFinite(input.days) && input.days >= 1;
-    if (currentStep.key === "interests") return input.interests.length > 0;
+    if (currentStep.key === "regions")
+      return parseCSV(draft.regions).length > 0;
+    if (currentStep.key === "days") {
+      const n = Number(draft.days);
+      return Number.isFinite(n) && n >= 1;
+    }
+    if (currentStep.key === "interests")
+      return parseCSV(draft.interests).length > 0;
     return false;
-  }, [currentStep.key, input]);
+  }, [currentStep.key, draft]);
 
   // 일정 생성
+  // ✅ startGenerate: draft를 최종 커밋해 사용하도록 수정한 전체 블럭
   const startGenerate = async () => {
-    setLoading(true);
+    // 1) draft → input 최종 커밋
+    const finalInput: TripInput = {
+      ...input,
+      regions: parseCSV(draft.regions),
+      days: Math.max(1, Number(draft.days || 1)) || 1,
+      interests: parseCSV(draft.interests),
+    };
+    setInput(finalInput);
+
+    // 2) 요청 아이디 관리 (경쟁 상태 방지)
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    // 3) 로딩 상태 세팅
+    setGenerating(true);
+    setEnhancing(false);
     setError(null);
     setPlan(null);
     setDayCursor(0);
+
     try {
+      // 4) 일정 생성 API 호출
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify(finalInput),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "생성 실패");
+      if (!res.ok) throw new Error(data?.error || "생성 실패");
 
-      const raw = ensureItemIds(data);
-      setPlan(raw);
+      // 5) 아이템 ID 보장
+      const rawPlan = ensureItemIds(data);
 
-      // 좌표 보강
-      try {
-        const regionHint = input.regions?.join(" ");
-        const enriched = await enrichPlanCoordinates(
-          raw,
-          regionHint,
-          input.language ?? "ko"
-        );
-        setPlan(enriched);
-      } catch (geoErr) {
-        console.warn("좌표 보강 실패", geoErr);
-      }
+      // 최신 요청만 반영
+      if (requestIdRef.current !== requestId) return;
+
+      setPlan(rawPlan);
+      setGenerating(false);
+
+      // 6) 좌표 보강 (비동기)
+      const regionHint = finalInput.regions?.join(" ");
+      const language = finalInput.language ?? "ko";
+
+      void (async () => {
+        if (requestIdRef.current !== requestId) return;
+        setEnhancing(true);
+        try {
+          const enriched = await enrichPlanCoordinates(
+            rawPlan,
+            regionHint,
+            language
+          );
+          if (requestIdRef.current !== requestId) return;
+          setPlan(enriched);
+        } catch (geoErr) {
+          if (requestIdRef.current === requestId) {
+            console.warn("좌표 보강 실패", geoErr);
+          }
+        } finally {
+          if (requestIdRef.current === requestId) {
+            setEnhancing(false);
+          }
+        }
+      })();
     } catch (e: unknown) {
+      if (requestIdRef.current !== requestId) return;
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg || "알 수 없는 오류");
-    } finally {
-      setLoading(false);
+      setGenerating(false);
     }
   };
 
@@ -190,7 +293,7 @@ export default function Page() {
         </h1>
 
         {/* 입력 단계 */}
-        {!plan && !loading && (
+        {!plan && !generating && (
           <div className="h-[70vh] flex flex-col items-center justify-center text-center">
             <AnimatePresence mode="wait">
               <motion.div
@@ -280,20 +383,26 @@ export default function Page() {
         )}
 
         {/* 로딩 */}
-        {loading && (
+        {generating && (
           <div className="h-[380px] flex items-center justify-center">
             <Spinner />
           </div>
         )}
 
         {/* 에러 */}
-        {error && !loading && !plan && (
+        {error && !generating && !plan && (
           <p className="text-red-600 text-center mt-6">{error}</p>
         )}
 
         {/* 결과 (하루씩 네비게이션) */}
-        {plan && !loading && (
+        {plan && !generating && (
           <div className="mt-6">
+            {enhancing && (
+              <div className="my-4">
+                <Spinner message="장소 좌표를 정리하는 중이에요…" />
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl shadow p-4 border">
               <h2 className="text-xl font-semibold">{plan.title}</h2>
               {plan.summary?.length ? (
