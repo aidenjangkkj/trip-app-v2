@@ -11,10 +11,26 @@ import { ensureItemIds } from "@/lib/ensureItemIds";
 
 // 스피너
 function Spinner({ message = "일정을 생성하고 있어요…" }: { message?: string }) {
+  const tips = useRef<string[]>([
+    "도시별 인기 스팟을 수집 중…",
+    "이동 동선을 최소화하고 있어요",
+    "AI가 맛집/카페 리뷰를 요약 중…",
+    "지도 좌표를 정밀 보정 중…",
+    "비 오는 날 대안 코스를 고려해요",
+  ]).current;
+
+  const [tipIdx, setTipIdx] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTipIdx((i) => (i + 1) % tips.length), 2500);
+    return () => clearInterval(id);
+  }, []);
+
   return (
-    <div className="flex items-center justify-center gap-3">
+    <div className="flex flex-col items-center justify-center gap-2" aria-live="polite">
       <div className="size-6 animate-spin rounded-full border-2 border-neutral-300 border-t-black" />
-      <span className="text-sm text-neutral-600">{message}</span>
+      <div className="text-sm text-neutral-700">{message}</div>
+      <div className="text-xs text-neutral-500">{tips[tipIdx]}</div>
     </div>
   );
 }
@@ -34,28 +50,13 @@ const REQUIRED_STEPS: {
   placeholder: string;
   type: "text" | "number";
 }[] = [
-  {
-    key: "regions",
-    label: "어디로 가시나요?",
-    placeholder: "예: 일본 도쿄 (여러 곳도 가능)",
-    type: "text",
-  },
-  {
-    key: "days",
-    label: "여행은 며칠인가요?",
-    placeholder: "예: 3",
-    type: "number",
-  },
-  {
-    key: "interests",
-    label: "주요 관심사는 무엇인가요?",
-    placeholder: "예: 미식, 포토스팟",
-    type: "text",
-  },
+  { key: "regions", label: "어디로 가시나요?", placeholder: "예: 일본 도쿄 (여러 곳도 가능)", type: "text" },
+  { key: "days", label: "여행은 며칠인가요?", placeholder: "예: 3", type: "number" },
+  { key: "interests", label: "주요 관심사는 무엇인가요?", placeholder: "예: 미식, 포토스팟", type: "text" },
 ];
 
 export default function Page() {
-  // --- 입력 상태 (URL 동기화 제거: 전부 로컬 state) ---
+  // 입력 상태
   const [input, setInput] = useState<TripInput>({
     regions: [],
     days: 3,
@@ -66,7 +67,14 @@ export default function Page() {
     language: "ko",
   });
 
-  // (선택) 최근 입력 로컬 저장/복원
+  // draft 입력 상태(사용자 타이핑 그대로 보존)
+  const [draft, setDraft] = useState<{ regions: string; days: string; interests: string }>({
+    regions: "",
+    days: "",
+    interests: "",
+  });
+
+  // 로컬 저장/복원
   useEffect(() => {
     try {
       const raw = localStorage.getItem("trip.input.v1");
@@ -79,7 +87,7 @@ export default function Page() {
     } catch {}
   }, [input]);
 
-  // 스텝/애니메이션
+  // 스텝
   const [stepIndex, setStepIndex] = useState(0);
 
   // 결과/로딩/에러
@@ -89,53 +97,84 @@ export default function Page() {
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 결과 페이징: 하루씩 보기
+  // 하루 보기 페이징
   const [dayCursor, setDayCursor] = useState(0);
 
-  // 현재 스텝
   const currentStep = REQUIRED_STEPS[stepIndex];
 
-  // 입력값을 문자열로 표시
+  // 현재 표시 값(draft 기준)
   const currentValue = useMemo(() => {
-    if (currentStep.key === "regions") return input.regions.join(", ");
-    if (currentStep.key === "days") return String(input.days || "");
-    if (currentStep.key === "interests") return input.interests.join(", ");
+    if (currentStep.key === "regions") return draft.regions;
+    if (currentStep.key === "days") return draft.days;
+    if (currentStep.key === "interests") return draft.interests;
     return "";
-  }, [currentStep, input]);
+  }, [currentStep, draft]);
 
-  // 현재 스텝 입력 업데이트
-  const updateCurrent = (raw: string) => {
+  // 스텝 변경 시 draft 초기화
+  useEffect(() => {
     if (currentStep.key === "regions") {
-      const arr = parseCSV(raw);
-      setInput((prev) => ({ ...prev, regions: arr }));
+      setDraft((d) => ({ ...d, regions: input.regions.join(", ") }));
     } else if (currentStep.key === "days") {
-      const n = Math.max(1, Number(raw || 1));
-      setInput((prev) => ({ ...prev, days: Number.isFinite(n) ? n : 1 }));
+      setDraft((d) => ({ ...d, days: String(input.days ?? "") }));
     } else if (currentStep.key === "interests") {
-      const arr = parseCSV(raw);
-      setInput((prev) => ({ ...prev, interests: arr }));
+      setDraft((d) => ({ ...d, interests: input.interests.join(", ") }));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIndex]);
+
+  // 입력 업데이트(draft만 갱신)
+  const updateCurrent = (raw: string) => {
+    if (currentStep.key === "regions") setDraft((d) => ({ ...d, regions: raw }));
+    else if (currentStep.key === "days") setDraft((d) => ({ ...d, days: raw }));
+    else if (currentStep.key === "interests") setDraft((d) => ({ ...d, interests: raw }));
+  };
+
+  // draft -> input 커밋
+  const commitDraftFor = (key: StepKey) => {
+    setInput((prev) => {
+      if (key === "regions") return { ...prev, regions: parseCSV(draft.regions) };
+      if (key === "days") {
+        const n = Math.max(1, Number(draft.days || 1));
+        return { ...prev, days: Number.isFinite(n) ? n : 1 };
+      }
+      if (key === "interests") return { ...prev, interests: parseCSV(draft.interests) };
+      return prev;
+    });
   };
 
   const goNextStep = useCallback(() => {
+    commitDraftFor(currentStep.key);
     setStepIndex((i) => (i < REQUIRED_STEPS.length - 1 ? i + 1 : i));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep.key]);
 
   const goPrevStep = useCallback(() => {
+    commitDraftFor(currentStep.key);
     setStepIndex((i) => (i > 0 ? i - 1 : i));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep.key]);
 
-  // 검증은 input 기준
+  // 유효성(draft 기준)
   const isValid = useMemo(() => {
-    if (currentStep.key === "regions") return input.regions.length > 0;
-    if (currentStep.key === "days")
-      return Number.isFinite(input.days) && input.days >= 1;
-    if (currentStep.key === "interests") return input.interests.length > 0;
+    if (currentStep.key === "regions") return parseCSV(draft.regions).length > 0;
+    if (currentStep.key === "days") {
+      const n = Number(draft.days);
+      return Number.isFinite(n) && n >= 1;
+    }
+    if (currentStep.key === "interests") return parseCSV(draft.interests).length > 0;
     return false;
-  }, [currentStep.key, input]);
+  }, [currentStep.key, draft]);
 
   // 일정 생성
   const startGenerate = async () => {
+    const finalInput: TripInput = {
+      ...input,
+      regions: parseCSV(draft.regions),
+      days: Math.max(1, Number(draft.days || 1)) || 1,
+      interests: parseCSV(draft.interests),
+    };
+    setInput(finalInput);
+
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
 
@@ -144,28 +183,30 @@ export default function Page() {
     setError(null);
     setPlan(null);
     setDayCursor(0);
+
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify(finalInput),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "생성 실패");
+      if (!res.ok) throw new Error(data?.error || "생성 실패");
 
-      const raw = ensureItemIds(data);
+      const rawPlan = ensureItemIds(data);
       if (requestIdRef.current !== requestId) return;
-      setPlan(raw);
+
+      setPlan(rawPlan);
       setGenerating(false);
 
-      const regionHint = input.regions?.join(" ");
-      const language = input.language ?? "ko";
+      const regionHint = finalInput.regions?.join(" ");
+      const language = finalInput.language ?? "ko";
 
       void (async () => {
         if (requestIdRef.current !== requestId) return;
         setEnhancing(true);
         try {
-          const enriched = await enrichPlanCoordinates(raw, regionHint, language);
+          const enriched = await enrichPlanCoordinates(rawPlan, regionHint, language);
           if (requestIdRef.current !== requestId) return;
           setPlan(enriched);
         } catch (geoErr) {
@@ -198,12 +239,11 @@ export default function Page() {
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [isValid, stepIndex, goNextStep]);
+
   return (
     <main className="min-h-screen bg-neutral-50">
       <section className="max-w-3xl mx-auto p-6">
-        <h1 className="text-3xl font-bold text-center mb-8">
-          AI 여행 일정 추천
-        </h1>
+        <h1 className="text-3xl font-bold text-center mb-8">AI 여행 일정 추천</h1>
 
         {/* 입력 단계 */}
         {!plan && !generating && (
@@ -221,11 +261,8 @@ export default function Page() {
                   {stepIndex + 1} / {REQUIRED_STEPS.length}
                 </div>
 
-                <div className="text-2xl md:text-3xl font-semibold mb-6">
-                  {currentStep.label}
-                </div>
+                <div className="text-2xl md:text-3xl font-semibold mb-6">{currentStep.label}</div>
 
-                {/* 큰 입력창 */}
                 {currentStep.type === "text" && (
                   <input
                     className="w-full text-center text-2xl md:text-3xl bg-transparent outline-none focus:outline-none focus:ring-0 placeholder:text-neutral-400 py-3"
@@ -283,9 +320,7 @@ export default function Page() {
                     <button
                       key={s.key}
                       onClick={() => setStepIndex(i)}
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        i === stepIndex ? "bg-black" : "bg-neutral-300"
-                      }`}
+                      className={`h-2.5 w-2.5 rounded-full ${i === stepIndex ? "bg-black" : "bg-neutral-300"}`}
                       aria-label={`step-${i + 1}`}
                     />
                   ))}
@@ -311,11 +346,11 @@ export default function Page() {
         {plan && !generating && (
           <div className="mt-6">
             {enhancing && (
-              <div className="flex items-center justify-center md:justify-start gap-2 text-sm text-neutral-500 mb-4">
-                <div className="size-3 animate-spin rounded-full border border-neutral-300 border-t-black" />
-                <span>장소 좌표를 정리하는 중이에요…</span>
+              <div className="my-4">
+                <Spinner message="장소 좌표를 정리하는 중이에요…" />
               </div>
             )}
+
             <div className="bg-white rounded-2xl shadow p-4 border">
               <h2 className="text-xl font-semibold">{plan.title}</h2>
               {plan.summary?.length ? (
@@ -340,11 +375,7 @@ export default function Page() {
                   {dayCursor + 1} / {plan?.days?.length ?? 0}일차
                 </div>
                 <button
-                  onClick={() =>
-                    setDayCursor((c) =>
-                      Math.min((plan?.days?.length ?? 1) - 1, c + 1)
-                    )
-                  }
+                  onClick={() => setDayCursor((c) => Math.min((plan?.days?.length ?? 1) - 1, c + 1))}
                   disabled={dayCursor >= (plan?.days?.length ?? 1) - 1}
                   className="px-3 py-2 rounded-xl border disabled:opacity-40"
                 >
@@ -368,7 +399,7 @@ export default function Page() {
                       copy.days[dayCursor].items = nextItems;
                       setPlan(copy);
                     }}
-                    onHighlight={() => {}}
+                    onHighlight={()=>{}}
                   />
                 </motion.div>
               </AnimatePresence>
@@ -378,9 +409,7 @@ export default function Page() {
                   <button
                     key={i}
                     onClick={() => setDayCursor(i)}
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      i === dayCursor ? "bg-black" : "bg-neutral-300"
-                    }`}
+                    className={`h-2.5 w-2.5 rounded-full ${i === dayCursor ? "bg-black" : "bg-neutral-300"}`}
                   />
                 ))}
               </div>
